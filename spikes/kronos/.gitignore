@@ -1,0 +1,7 @@
+.venv/
+vendor-Kronos/
+data/
+results/raw/
+__pycache__/
+results/forecasts/
+results/*.parquet

@@ -1,0 +1,35 @@
+[project]
+name = "kronos-spike"
+version = "0.0.0"
+description = "Tickets kronos-jev/02 (install and speed) and 06 (Edge test)"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.8.0",
+    "numpy",
+    "pandas==2.2.2",
+    "einops==0.8.1",
+    "huggingface_hub==0.33.1",
+    "safetensors==0.6.2",
+    "tqdm==4.67.1",
+    "pyarrow",
+    "scipy",
+    "ib_async==2.0.1",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
