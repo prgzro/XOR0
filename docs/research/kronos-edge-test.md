@@ -188,7 +188,7 @@ Every variant run, including failed ones, gets one line here: date, variant, win
 
 ## Pre-registration commit
 
-_Recorded when the model size and N are fixed and this file is committed._
+**`fcbef959e8fd1dde5d0e4d918d8be5dbc86740f6`** (`fcbef95`), on branch `kronos-edge-test`, 2026-11-26 ~18:25 UTC. The rules above are binding from this commit. The out-of-sample run is unsealed with `--unseal fcbef95`.
 
 ## Disclosed deviations
 

@@ -209,7 +209,7 @@ All within safe limits for the laptop. Advice given: keep it plugged in, vents c
 
 ### ~18:25 Pre-registration committed
 
-- Branch `kronos-edge-test`. This commits the pre-registration, docs, tickets, code, tests and lookahead audit results.
+- Commit **`fcbef95`** on branch `kronos-edge-test`. This commits the pre-registration, docs, tickets, code, tests and lookahead audit results.
 - Not committed: price data, Forecasts, the venv, the Kronos clone, `.env` (all gitignored).
 - From this commit on, the rules are frozen. Any change goes under "Disclosed deviations".
 
