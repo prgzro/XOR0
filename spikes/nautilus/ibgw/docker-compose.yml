@@ -1,0 +1,27 @@
+# JEV QUANT - IB Gateway (PAPER ONLY, read-only API, localhost only)
+# Start (from the repo root; credentials come from the repo .env, never inlined here):
+#   docker compose -p jevquant-ibgw --env-file .env -f spikes/nautilus/ibgw/docker-compose.yml up -d
+# Stop:
+#   docker compose -p jevquant-ibgw --env-file .env -f spikes/nautilus/ibgw/docker-compose.yml down
+#   (or: docker stop jevquant-ibgw && docker rm jevquant-ibgw)
+name: jevquant-ibgw
+services:
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:10.50.1h   # = stable channel (digest sha256:4f2704a1...ad5a10) on 2026-11-26
+    container_name: jevquant-ibgw
+    restart: "no"            # no auto-restart loop on a failed login (account-lockout guard)
+    environment:
+      TWS_USERID: ${IBKR_USERNAME:?IBKR_USERNAME missing}
+      TWS_PASSWORD: ${IBKR_PASSWORD:?IBKR_PASSWORD missing}
+      TRADING_MODE: paper
+      READ_ONLY_API: "yes"
+      TWS_ACCEPT_INCOMING: reject
+      # EXISTING_SESSION_DETECTED_ACTION: manual   # image default. "primaryoverride" would log out any other
+      # session of this username; set it only if the user decides so (see docs/research/ibkr-paper-connection.md).
+      RELOGIN_AFTER_TWOFA_TIMEOUT: "no"
+      TWOFA_TIMEOUT_ACTION: exit
+      AUTO_RESTART_TIME: "11:45 PM"
+      TIME_ZONE: Etc/UTC
+      TZ: Etc/UTC
+    ports:
+      - "127.0.0.1:4002:4004"   # paper API (socat relay -> internal 4002)

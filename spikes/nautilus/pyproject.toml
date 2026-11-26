@@ -1,0 +1,21 @@
+[project]
+name = "nautilus-spike"
+version = "0.0.0"
+description = "Ticket kronos-jev/09: does NautilusTrader v2 earn PAPER execution?"
+requires-python = "==3.13.*"
+dependencies = [
+    "nautilus_trader==2.0.0rc9",
+    "ib_async==2.0.1",
+    "python-dotenv",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+prerelease = "allow"
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
