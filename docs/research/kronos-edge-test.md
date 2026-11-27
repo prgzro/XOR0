@@ -260,3 +260,13 @@ Every variant run, including failed ones, gets one line here: date, variant, win
   - The MIDPOINT bars also have spikes: 60–130 bars per symbol with a wick > 3 ATR beyond the open, close and previous close, and 9–35 per symbol opening with a gap > 3 ATR, mostly at 22:15. Some are real events; some are probably bad prints. They're in the Kronos inputs and the ATR, and cleaning them would mean re-running all the Forecasts.
   - IBKR's median close spread is often 0 (e.g. EURUSD 2014), so the base cost model may understate the spread. The pre-registered XM-spread sensitivity covers this.
 - **Timing:** decided after run 1's in-sample result was seen (it was dominated by the bad ticks; see the journal), and before the seal was broken. The user chose the 3 ATR threshold over 1 ATR, over skipping the 22:15 bar, and over stopping. The 12-set selection re-runs as run 2, and both runs are in the research log.
+
+## Result (2026-11-27 15:10 UTC)
+
+**NO-GO.** The sealed exam (2025-07-01 → 2026-11-26, 7 majors, set P_MIN 0.55 / MOVE_MIN 0.25, HEAD `fabc439`, run once): n = 6,813, mean **−0.188 R [−0.243, −0.129]** at base costs, and −0.146 R before costs.
+- Kronos beats 25.1% of the random-direction repeats.
+- Paired against revert-to-the-400-bar-mean, it's −0.016 R [−0.035, +0.003].
+- Its calibration (Brier 0.435 against 0.250 for a constant) shows over-confident Forecasts with no directional information (hit rate 0.508).
+- The full report is in `spikes/kronos/results/oos.md`; the narrative and the audit are in `docs/journal/kronos-edge-test.md` (14:33–15:10).
+
+**Authenticity audit, step 4 (intrabar):** 6,812 of 6,813 fills fall inside their bar. The exception, and 27 similar trades, enter on a wide-spread reopen bar whose exit-side open is already through the SL. The simulator fills them at the SL instead of the open, which is optimistic by −0.0014 R on the pooled mean. This is disclosed and not fixed; it can't change the verdict.

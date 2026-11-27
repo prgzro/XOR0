@@ -6,8 +6,9 @@ LOG=/home/prgzro/Projects/XOR0/spikes/kronos/results/safety_watch.log
 CPU_MAX=95; GPU_MAX=87; DISK_MIN_GB=5; NEED=3
 bad=0
 while true; do
-  pid=$(pgrep -f "scripts/run_forecasts.py" | head -1)
-  if [[ -z "$pid" ]] && ! pgrep -f run_pre_oos.sh >/dev/null; then
+  # The Python process only: wrappers (systemd-inhibit, shells) also carry the script name.
+  pid=$(pgrep -f '^\.venv/bin/python .*scripts/run_forecasts\.py' | head -1)
+  if [[ -z "$pid" ]] && ! pgrep -f '^bash \./scripts/run_pre_oos\.sh' >/dev/null; then
     echo "$(date -u +%FT%TZ) forecast job finished; watch ends" | tee -a "$LOG"; exit 0
   fi
   cpu=$(sensors 2>/dev/null | awk '/Package id 0/ {gsub(/[+°C]/,"",$4); print int($4)}')

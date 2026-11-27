@@ -20,9 +20,9 @@ A running, dated record of the journey from "use Kronos to trade" to a verdict. 
 | 6. Commit the pre-registration | ✅ branch `kronos-edge-test` | Thu ~18:25 |
 | 7. Forecasts 2010–2019, 7 majors | ✅ 70 of 70 files, integrity checked | Fri 12:13 |
 | 8. Choose the settings (in-sample) | ✅ run 2: 0.55 / 0.25 selected; every set −0.13 R in-sample | Fri 12:33 |
-| 9. Unseal and run the exam (2025-07 → now) | ⬜ | **Fri ~10:00: verdict** |
+| 9. Unseal and run the exam (2025-07 → now) | ✅ **NO-GO**: −0.188 R [−0.243, −0.129], n = 6,813; no better than random | Fri 15:10 |
 | 10. Contamination check (2020 → 2025-06) | ⬜ | Fri ~18:00 |
-| 11. Gold test (only if the majors pass) | ⬜ | later |
+| 11. Gold test (only if the majors pass) | ⛔ not run: the majors failed | — |
 
 ---
 
@@ -403,6 +403,120 @@ A read-only review of the code found two bugs. Neither touches the primary verdi
 - **What the rules say next:** a negative in-sample best doesn't stop the test. The only selection-stage no-go is "no set with ≥ 100 trades". The selected set goes to the sealed exam unchanged.
 - **Waiting for the user:** whether to commit D1–D5 before unsealing.
 
+### 12:35–12:37: D1–D5 committed, then the seal broken (user approved: "Commit D1–D5, then unseal")
+
+- **Commit `fabc439`:** D1–D5 code and tests, the research doc, the journal, the safety watch, the code review notes, and the selection outputs (`select.md`, `selected_set.json` = 0.55 / 0.25, plus the invalid run 1 as evidence). No secrets: the parquet files, Forecasts and logs are gitignored.
+- **12:36:07, unsealed:** `run_forecasts.py --model small --paths 30 --batch 12 --from 2025-07-01 --to 2026-11-27 --symbols <7 majors> --out results/forecasts/small_n30_oos --unseal fcbef95`.
+  - It runs under `systemd-inhibit`, and the log is `results/run_oos.log`.
+  - The IBKR data ends on 2026-11-26.
+  - The symbols are passed explicitly, because the default list has 12 symbols (crosses and gold included).
+- **A safety-watch bug, found and fixed in the first minute:** the watch picked its target with `pgrep -f "scripts/run_forecasts.py"`. This time the `systemd-inhibit` wrapper and the launching shell carry the same text, so the watch latched onto the wrong PID (92438) and would have frozen the wrapper instead of Python.
+  - The match is now anchored to `^\.venv/bin/python .*scripts/run_forecasts\.py`. The watch was restarted at 12:37:08 and reads `pid=92450`, the Python process.
+  - The in-sample run wasn't affected, because its wrapper was `run_pre_oos.sh`.
+  - The job ran unwatched for about 1 minute, at CPU 73–80 °C.
+- **Expected:** about 62,000 Forecasts (7 × ≈ 8,900) at about 8.7/s, so about 2 h, with an ETA of about 14:40 UTC. Then the evaluation: `evaluate.py --forecasts results/forecasts/small_n30_oos --stage oos --set 0.55,0.25`.
+
+### ~12:42: exam Forecasts, EURUSD 2025-07 → 12 done
+
+- 3,139 Forecasts in 355 s (8.85/s), at full speed. That's about 26 weeks × 120 bars, as expected.
+- 2026 takes about 650 s per symbol, so each symbol takes about 1,000 s and the ETA is about 14:35 UTC.
+
+### ~12:53: exam Forecasts, EURUSD complete (1 of 7)
+
+- 2026: 5,628 Forecasts in 638 s (8.82/s). EURUSD has 8,767 exam Forecasts in total. Six symbols are left, with an ETA of about 14:35 UTC.
+
+### ~12:59: exam Forecasts, GBPUSD 2025 done
+
+- 3,139 Forecasts in 357 s (8.79/s). GBPUSD 2026 is next; the ETA is still about 14:35 UTC.
+
+### ~13:09: exam Forecasts, GBPUSD complete (2 of 7)
+
+- 2026: 5,628 Forecasts in 642 s (8.77/s). Five symbols are left, with an ETA of about 14:33 UTC.
+- The CPU runs warmer now, at 82–90 °C (limit 95 °C); the GPU is at 64 °C. There have been no pauses.
+
+### ~13:15: exam Forecasts, USDJPY 2025 done
+
+- 3,139 Forecasts in 358 s (8.76/s). The ETA is still about 14:33 UTC.
+
+### ~13:26: exam Forecasts, USDJPY complete (3 of 7)
+
+- 2026: 5,629 Forecasts in 639 s (8.81/s). Four symbols are left, with an ETA of about 14:33 UTC.
+
+### ~13:32: exam Forecasts, USDCHF 2025 done
+
+- 3,139 Forecasts in 356 s (8.82/s). The ETA is still about 14:33 UTC.
+
+### ~13:43: exam Forecasts, USDCHF complete (4 of 7)
+
+- 2026: 5,629 Forecasts in 642 s (8.77/s). Three symbols are left, with an ETA of about 14:33 UTC. There have been no pauses.
+
+### ~13:49: exam Forecasts, AUDUSD 2025 done
+
+- 3,139 Forecasts in 356 s (8.81/s). The ETA is still about 14:33 UTC.
+
+### ~14:00: exam Forecasts, AUDUSD complete (5 of 7)
+
+- 2026: 5,630 Forecasts in 639 s (8.81/s). USDCAD and NZDUSD are left, with an ETA of about 14:33 UTC.
+
+### ~14:06: exam Forecasts, USDCAD 2025 done
+
+- 3,139 Forecasts in 356 s (8.82/s). The ETA is still about 14:33 UTC.
+
+### ~14:16: exam Forecasts, USDCAD complete (6 of 7)
+
+- 2026: 5,630 Forecasts in 638 s (8.82/s). Only NZDUSD is left, with an ETA of about 14:33 UTC.
+
+### ~14:22: exam Forecasts, NZDUSD 2025 done
+
+- 3,131 Forecasts in 355 s (8.81/s). That's 8 fewer than the other majors' 3,139, matching NZDUSD's slightly different IBKR bar schedule (see 12:13). It gets the file check once the job ends.
+- NZDUSD 2026 is the last file, with an ETA of about 14:33 UTC.
+
+### 14:32: exam Forecasts complete, 14 of 14 files, integrity checked
+
+- NZDUSD 2026: 5,633 Forecasts in 639 s (8.82/s). The job exited cleanly at 14:32:20 and the sleep block was released.
+- **Safety, 12:37–14:32:** 0 pauses. The CPU ran at 74–90 °C (limit 95 °C), the GPU at 63–66 °C. The laptop stayed on the charger with 55 GB free.
+- **Integrity check of the 14 files:** clean. **61,372 Forecasts**, each file holding exactly the expected count (every bar in the window that has a next bar). Everything lies inside 2025-07-01 → 2026-11-26, with no NaNs or duplicates, `p_up` and the quantiles in range, and every `last_close` equal to its bar's close.
+- **Next:** the exam, run once: `evaluate.py --forecasts results/forecasts/small_n30_oos --stage oos --set 0.55,0.25`.
+
+### 14:33–15:10: THE EXAM, verdict NO-GO
+
+`evaluate.py --forecasts results/forecasts/small_n30_oos --stage oos --set 0.55,0.25` at HEAD `fabc439`, run once. It took 36.6 minutes, exit 0. Output: `results/oos.md`, `results/oos_trades.parquet`.
+
+- **Primary (pooled, base costs):** n = 6,813, win rate 0.398, **mean −0.188 R [−0.243, −0.129]**, PF 0.70. **Verdict: NO-GO.**
+- **Before costs it still loses:** gross −0.146 R [−0.200, −0.087]. Costs aren't the problem; there's no directional edge.
+- **Long and short:** long −0.207 R, short −0.167 R.
+- **Per symbol:** all 7 are negative. USDJPY is the least bad at −0.045 R [−0.145, +0.060]; USDCAD the worst at −0.292 R.
+- **Sensitivities:** all negative.
+  - TP first: −0.182 R;
+  - 2 ticks of slippage: −0.244 R;
+  - no financing: −0.173 R;
+  - XM spread: −0.316 R.
+- **Baselines** (same entry bars, distances and costs):
+  - momentum −0.189 R;
+  - mean reversion −0.173 R;
+  - revert to the 400-bar mean −0.172 R;
+  - **Kronos − revert, paired (D3): −0.016 R [−0.035, +0.003]**, so not better;
+  - random direction: mean of means −0.179 R, and Kronos beats only 25.1% of the 1,000 repeats.
+  - **Kronos is no better than a coin flip, and slightly worse than the one-line revert-to-mean rule.**
+- **Calibration** (61,211 Forecasts):
+  - the directional hit rate is 0.508;
+  - **the Brier score is 0.435, against 0.250 for a constant 0.5**;
+  - the deciles show p_up of 0.00 or 1.00 for 50% of Forecasts, while the realised up-rate stays at 0.46–0.55 in every decile.
+  - So the 30 paths are badly over-confident, and their confidence carries no information.
+- **Feature tests:** `p_edge` −0.145 R (Holm p 0.001) and `sl_atr` +0.170 R (Holm p 0.000) confirm the in-sample signs. More confident Kronos Forecasts lose more, and wider stops lose less. Both are exploratory; they don't make a strategy.
+- **Target check (reported only):** at 1% risk the median month is −49% (5th percentile −81%), with 400 trades a month. The historical max DD of 1,332 R sits at the 57th percentile of the block-bootstrap distribution. No risk level reaches the target.
+- **Authenticity audit, step 4 (intrabar), run on all 6,813 exam trades:**
+  - Every entry sits exactly at the next bar's open on the right side, + 1 tick.
+  - 126 SL/TP gap-fills sit at the open.
+  - **1 fill was outside its bar:** an AUDUSD long entered on the Sunday reopen bar (2026-06-07 21:15) with a 13.5-pip spread. The BID open was already below the SL, but the simulator only gap-fills from the second bar on.
+  - The same entry-bar case affects **28 trades**. A realistic fill makes them worse, by −0.35 R on average, and moves the pooled mean by **−0.0014 R** (to about −0.190).
+  - It's disclosed and not fixed, because the exam runs once and the fix can only make a NO-GO worse.
+  - The R range is −3.4 to +16.6: no outliers.
+- **What the rules say this means:** "No-go: anything else". The Forecast's direction carries no information here (hit rate 0.508, Brier far worse than the constant, no better than random), so this is a plain NO-GO, not "information but no tradable edge".
+  - **Gold isn't tested,** because it only runs if the majors pass.
+  - **Nothing is traded.**
+  - The contamination check (2020 → 2025-06) is still due for the record.
+
 ---
 
 ## Research log (trial count for the deflated Sharpe)
@@ -413,3 +527,4 @@ Every variant run on real results goes here, including failed ones. Speed runs a
 |---|---|---|---|---|---|
 | Fri 12:25 | 12-set grid, run 1 (raw IBKR BID/ASK) | in-sample 2010–2019 | 38,632–45,727 per set | +0.42 to +0.92 (invalid: one +44,411 R bad-tick trade) | selected 0.7/0.5; invalid, see journal 12:22–12:40 |
 | Fri 12:33 | 12-set grid, run 2 (D5: BID/ASK bad ticks cleaned) | in-sample 2010–2019 | 38,572–45,666 per set | −0.126 to −0.135, all CIs < 0 | selected 0.55/0.25; the same 12 variants re-run on corrected data |
+| Fri 15:10 | **the exam**, set 0.55/0.25, run once | sealed 2025-07-01 → 2026-11-26 | 6,813 | −0.188 [−0.243, −0.129] | **NO-GO** |
