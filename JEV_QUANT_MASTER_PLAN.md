@@ -120,7 +120,7 @@ A pre-registered, walk-forward test of Kronos used as-is (zero-shot, no fine-tun
   - strategy trades, win rate, mean R with a bootstrap CI, PF and max DD;
   - per symbol, with a multiple-comparison correction;
   - compared against naive baselines: random entries with the same SL/TP, and a momentum baseline.
-- **Go** if out-of-sample mean R is > 0 after costs with a CI that excludes 0, or at least clearly beats the baselines. **No-go:** stop, or try fine-tuning as a separate, pre-registered experiment.
+- **Go** only if the pooled out-of-sample mean R after base costs is > 0, the bootstrap 95% CI lower bound is > 0, and there are at least 100 trades. **Inconclusive** if fewer than 100 trades: keep collecting forward data in SIGNAL_ONLY mode. **No-go** otherwise, including when Kronos beats the baselines but earns ≤ 0 R: stop, or try fine-tuning as a separate, pre-registered experiment. Full pre-registration: `docs/research/kronos-edge-test.md`.
 
 ## 9. Execution modes
 
