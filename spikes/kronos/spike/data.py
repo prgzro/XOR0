@@ -32,6 +32,28 @@ def _bad(df):
     return (h < l) | (c > h) | (c < l) | (o > h) | (o < l) | ~np.isfinite(o + h + l + c)
 
 
+BAD_TICK_ATR = 3.0  # D5: a BID/ASK value this many ATR outside the mid bar's range is a bad tick
+SPREAD_WINDOW = 400
+
+
+def clean_quotes(mid: np.ndarray, bid: np.ndarray, ask: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
+    """D5 (docs/research/kronos-edge-test.md). A bar is a bad quote bar if any BID or ASK value
+    lies more than BAD_TICK_ATR x ATR outside [mid low, mid high], or BID > ASK in any of OHLC.
+    Its BID/ASK OHLC are replaced by mid OHLC -/+ the median close half-spread of the previous
+    SPREAD_WINDOW bars. ATR is the previous bar's (causal). MIDPOINT is never changed."""
+    atr = np.r_[np.nan, wilder_atr(mid)[:-1]]
+    lo = mid[:, 2:3] - BAD_TICK_ATR * atr[:, None]
+    hi = mid[:, 1:2] + BAD_TICK_ATR * atr[:, None]
+    outside = ((bid < lo) | (bid > hi) | (ask < lo) | (ask > hi)).any(axis=1) & np.isfinite(atr)
+    bad = outside | (bid > ask + 1e-12).any(axis=1)
+    half = pd.Series((ask[:, 3] - bid[:, 3]) / 2).where(~bad)
+    h = half.rolling(SPREAD_WINDOW, min_periods=1).median().shift(1).bfill().to_numpy()
+    bid, ask = bid.copy(), ask.copy()
+    bid[bad] = mid[bad] - h[bad, None]
+    ask[bad] = mid[bad] + h[bad, None]
+    return bid, ask, int(bad.sum())
+
+
 def load(symbol: str, data_dir: Path = DATA) -> tuple[Bars, list[str]]:
     log = []
     frames = {}
@@ -50,7 +72,10 @@ def load(symbol: str, data_dir: Path = DATA) -> tuple[Bars, list[str]]:
     mid, bid, ask = (frames[s].loc[idx, cols].to_numpy(float) for s in ("MIDPOINT", "BID", "ASK"))
     crossed = (ask[:, 3] < bid[:, 3]).sum()
     if crossed:
-        log.append(f"{symbol}: {int(crossed)} bars with ask close < bid close (kept)")
+        log.append(f"{symbol}: {int(crossed)} bars with ask close < bid close (replaced by D5)")
+    bid, ask, n_fixed = clean_quotes(mid, bid, ask)
+    if n_fixed:
+        log.append(f"{symbol}: {n_fixed} bars with bad BID/ASK ticks replaced by mid ± median half-spread (D5)")
     bars = Bars(pd.DatetimeIndex(idx), mid, bid, ask, tick(symbol))
     atr = wilder_atr(mid)
     ret = np.abs(np.diff(mid[:, 3], prepend=np.nan))

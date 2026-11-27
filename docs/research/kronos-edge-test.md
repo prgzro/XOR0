@@ -140,6 +140,7 @@ If the speed measurements show 2010–2019 can't be computed in time, the in-sam
 ### Verdict
 
 - **Go:** pooled out-of-sample mean R > 0, **and** the CI lower bound > 0, **and** n ≥ 100 trades.
+  - **Added by D3:** **and** Kronos beats the "revert to the 400-bar mean" baseline, paired on the same symbol and entry bar. The mean of (Kronos R − baseline R) must be > 0, and its day-clustered CI lower bound must be > 0. If Kronos meets the other three conditions but not this one, the verdict is "NO-GO (not better than revert-to-mean)".
 - **Inconclusive:** n < 100. Keep collecting forward data in SIGNAL_ONLY mode. Build nothing that trades.
 - **No-go:** anything else, including "beats the baselines but ≤ 0 R". Record that as "the Forecast has information but no tradable edge", which feeds the separate, pre-registered fine-tuning decision.
 
@@ -192,4 +193,70 @@ Every variant run, including failed ones, gets one line here: date, variant, win
 
 ## Disclosed deviations
 
-_None yet._
+### D1 (2026-11-27 ~02:10 UTC): baseline geometry keyed by symbol (bug fix, approved by the user)
+
+- **Bug:** `scripts/evaluate.py` keyed the baselines' mirrored risk and reward distances by timestamp only (`{ts: (risk, reward)}`), pooled over all symbols.
+  - A baseline on one symbol could trade at a bar where only *another* symbol had a Kronos trade.
+  - It would then use that symbol's distances, in the wrong price units (e.g. EURUSD's 0.0018 on USDJPY).
+- **Fix:** the geometry is now `{symbol: {ts: (risk, reward)}}`. Each baseline, and each random-direction repeat, mirrors only its own symbol's Kronos trades, as the plan intended ("same entry bars, same risk and reward distances, own direction").
+- **Check (2019, EURUSD and USDJPY):** a baseline that copies Kronos's direction trades 563 of 564 and 612 of 613 of Kronos's own entry bars.
+  - Median risk: 0.00185 vs 0.00180 (EURUSD), and 0.161 vs 0.155 (USDJPY).
+  - 98–99% of trades have the same exit reason.
+  - Only counts and distances were looked at, no R, so it isn't a trial.
+- **Unchanged, disclosed:**
+  - The baselines take every Kronos entry bar, even when the baseline's own previous trade is still open. Kronos's entries never overlap, but a baseline going the other way can exit later.
+  - The mirror is anchored on the mid close, not the filled entry, so the distances differ slightly.
+- **Effect:** only the secondary baseline comparison. The primary verdict, the selection and the statistics are untouched.
+- **Timing:** fixed before any evaluation was run and before the seal was broken.
+
+### D2 (2026-11-27 ~02:05 UTC): forecast files refuse to resume from another window (bug fix, approved by the user)
+
+- **Bug:** `scripts/run_forecasts.py` names output files `SYM_YEAR.parquet` and skips any file that already exists.
+  - The contamination run (2020 → 2025-06) and the sealed run (2025-07 →) both write `SYM_2025.parquet`.
+  - With the same output folder, the second run would silently skip 2025, and the sealed exam would lose 2025-07 → 2025-12 (or the contamination check would lose 2025-01 → 06).
+- **Fix:** before skipping an existing file, the script checks that its timestamps lie inside the requested window, and stops with an error if they don't.
+  - The sealed run will also use its own folder: `--out results/forecasts/small_n30_oos`.
+- **Check:** tested on `EURUSD_2019.parquet`. With the same window it resumes; with a 2019-07 → window it stops with the error.
+- **Effect:** none on Forecast values, which are seeded per Forecast and unchanged. It only prevents missing data.
+- **Timing:** edited while the in-sample run was going. The change only touches the "file already exists" branch, which no remaining in-sample symbol hits (USDCAD started on the new code at 02:11 and runs normally).
+
+### D3 (2026-11-27 ~02:30 UTC): a GO must also beat the revert-to-mean baseline (stricter rule, approved by the user)
+
+- **Gap:** the plan said "if Kronos can't beat this one-line rule, it isn't adding anything", but the verdict didn't require it.
+  - The in-sample Forecasts agree with sign(400-bar mean − close) 88% of the time (92% among confident Forecasts), so this risk is real: Kronos could pass on R > 0 while only repeating the one-line rule.
+- **Rule added:** a GO also needs Kronos to beat that baseline, paired on the same symbol and entry bar.
+  - The mean of (Kronos R − baseline R) must be > 0, with its day-clustered bootstrap CI lower bound > 0 (the same test as the primary verdict).
+  - Otherwise the verdict is "NO-GO (not better than revert-to-mean)".
+  - The same comparison is reported at every stage that runs the baselines.
+- **Direction:** this only makes a GO harder. It can't turn a NO-GO into a GO.
+- **Timing:** decided before any evaluation was run and before the seal was broken. The user chose it after it was put to them as a yes/no question.
+
+### D4 (2026-11-27 ~11:40 UTC): the feature median split handles ties (bug fix, approved by the user)
+
+- **Bug:** `feature_tests` in `scripts/evaluate.py` split each feature at `x > median`. With N = 30 paths, `|p_up − 0.5|` only takes values k/30, and in the 2019 smoke test (EURUSD and USDJPY) 57% of trades had all 30 paths agree (`p_edge` = 0.5 = the median = the max).
+  - The "above" group was empty, so the difference was `nan`.
+  - In the permutation test, `abs(perm) >= nan` is always False, so the code printed **p = 0.000, Holm p = 0.000**: a false "significant feature", which would then be "confirmed" out-of-sample.
+- **Fix:** split at `x > median`. If that leaves one side empty, split at `x ≥ median` instead. If a side is still empty, the feature is reported as "not testable (ties)" with p = 1. Three unit tests cover this (`tests/test_evaluate.py`).
+- **Effect:** only the exploratory feature tests. The selection rule, the primary verdict and every other statistic are untouched.
+- **Timing:** found by a structure-only smoke test (every number masked, so not a trial) on 2019 data, and fixed before the in-sample selection ran and before the seal was broken. The user chose the tie-aware split over "mark untestable only" and "leave as is".
+
+### D5 (2026-11-27 ~12:50 UTC): bad BID/ASK ticks are cleaned (data fix, approved by the user)
+
+- **Problem:** IBKR's H1 BID/ASK history has impossible prints, mostly on the 22:15 UTC bar after the daily break.
+  - Example: the AUDUSD 2012-02-23 22:15 BID open is **79.95** (true ≈ 1.0717).
+  - Example: the EURUSD 2014-01-06 22:15 BID low is 1.3200 and the ASK open 1.4240 (true ≈ 1.3634).
+  - The pre-registered fill rules turned them into a **+44,411 R** TP gap-fill and a −22 R SL gap-fill, which made the first in-sample selection (run 1, `results/select_v1_badticks.md`) invalid.
+  - The pre-registered cleaning (`_bad`: malformed OHLC) can't catch them, because each bar is internally consistent. The intrabar audit can't either, because the bad tick *defines* the bar's range.
+- **Rule** (`clean_quotes` in `spike/data.py`), fixed from price data before any re-run:
+  - A bar is a bad quote bar if any BID or ASK OHLC value lies more than **3 ATR** (the previous bar's ATR14, causal) outside [mid low, mid high], or if BID > ASK in any of OHLC.
+  - Its BID and ASK OHLC are replaced by the mid OHLC ∓ the median close half-spread of the previous 400 bars.
+  - Spread widening up to 3 ATR is kept as a real rollover cost.
+- **Scope:**
+  - The same rule applies to every window, the exam included.
+  - **MIDPOINT is never changed,** so the Kronos inputs and the 434,700 saved Forecasts are unaffected (`run_forecasts.py` never reads BID/ASK).
+  - It replaces 384 bars over all dates: EURUSD 55, GBPUSD 36, USDJPY 46, USDCHF 68, AUDUSD 44, USDCAD 54, NZDUSD 86.
+  - 3 unit tests (`tests/test_data.py`).
+- **Disclosed residual risks, not fixed:**
+  - The MIDPOINT bars also have spikes: 60–130 bars per symbol with a wick > 3 ATR beyond the open, close and previous close, and 9–35 per symbol opening with a gap > 3 ATR, mostly at 22:15. Some are real events; some are probably bad prints. They're in the Kronos inputs and the ATR, and cleaning them would mean re-running all the Forecasts.
+  - IBKR's median close spread is often 0 (e.g. EURUSD 2014), so the base cost model may understate the spread. The pre-registered XM-spread sensitivity covers this.
+- **Timing:** decided after run 1's in-sample result was seen (it was dominated by the bad ticks; see the journal), and before the seal was broken. The user chose the 3 ATR threshold over 1 ATR, over skipping the 22:15 bar, and over stopping. The 12-set selection re-runs as run 2, and both runs are in the research log.

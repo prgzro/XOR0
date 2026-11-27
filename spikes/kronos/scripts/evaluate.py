@@ -68,7 +68,8 @@ def stats_row(r) -> ForecastStats:
 def run_symbol(sym, bars, fc, p_min, move_min, tp_first=False, slip_ticks=1, financing=True,
                direction_fn=None, geometry=None):
     """Sequential walk: one open position per symbol. direction_fn(t, fs) overrides Kronos's
-    direction (baselines); geometry maps t -> (risk, reward) distances to mirror."""
+    direction (baselines); geometry maps this symbol's Kronos entry ts -> (risk, reward)
+    distances to mirror."""
     pos = {ts: i for i, ts in enumerate(bars.ts)}
     out, busy_until = [], -1
     for r in fc.itertuples(index=False):
@@ -133,13 +134,30 @@ def fmt(s):
             f"max DD {s['max_dd_r']:.1f} R") if s["n"] else "n=0"
 
 
+def median_split(x):
+    """D4: x > median; if ties leave a side empty, x >= median; None if still one-sided."""
+    med = np.median(x)
+    for hi in (x > med, x >= med):
+        if 0 < hi.sum() < len(x):
+            return hi
+    return None
+
+
+def feature_row(f, d, pv, ad):
+    return f"| {f} | not testable (ties) | – | – |" if np.isnan(d) else f"| {f} | {d:+.3f} | {pv:.3f} | {ad:.3f} |"
+
+
 def feature_tests(df):
-    """Median split on each pre-registered feature: mean R above vs below the median."""
+    """Median split on each pre-registered feature: mean R above vs below the median.
+    A feature that cannot be split (D4) reports d = nan, p = 1 ('not testable (ties)')."""
     res = []
     rng = np.random.default_rng(0)
     for f in FEATURES:
         x = df[f].to_numpy(float)
-        hi = x > np.median(x)
+        hi = median_split(x)
+        if hi is None:
+            res.append((f, float("nan"), 1.0))
+            continue
         d = df.r[hi].mean() - df.r[~hi].mean()
         r = df.r.to_numpy()
         perm = np.array([r[p].mean() - r[~p].mean() for p in (rng.permutation(hi) for _ in range(5000))])
@@ -196,7 +214,7 @@ def main():
             df["atr_pctile"] = atr_percentile(df, bars)
             lines += ["", "## Feature tests (in-sample, selected set, median split, Holm over 6)", "",
                       "| feature | mean R above − below | p | Holm p |", "|---|---|---|---|"]
-            lines += [f"| {f} | {d:+.3f} | {pv:.3f} | {ad:.3f} |" for f, d, pv, ad in feature_tests(df)]
+            lines += [feature_row(*t) for t in feature_tests(df)]
             df.to_parquet(out / "select_trades.parquet")
             (out / "selected_set.json").write_text(json.dumps({"p_min": p, "move_min": m}))
     else:
@@ -209,10 +227,7 @@ def main():
             df["atr_pctile"] = atr_percentile(df, bars)
             base = summary(df.r.to_numpy(), df.day.to_numpy())
             lines += [f"## Primary: pooled, base costs, set P_MIN {p}, MOVE_MIN {m}", "", fmt(base), ""]
-            if a.stage == "oos":
-                go = base["n"] >= 100 and base["mean_r"] > 0 and base["ci_lo"] > 0
-                verdict = "INCONCLUSIVE (n < 100)" if base["n"] < 100 else ("GO" if go else "NO-GO")
-                lines += [f"**Verdict: {verdict}**", ""]
+            verdict_at = len(lines)  # the OOS verdict goes here once the revert baseline has run (D3)
             lines += ["## Secondary", "", f"- gross (no costs): {fmt(summary(df.r_gross.to_numpy(), df.day.to_numpy()))}"]
             for d, name in ((1, "long"), (-1, "short")):
                 sub = df[df.direction == d]
@@ -238,22 +253,38 @@ def main():
                 lines.append(f"- {k}: {fmt(summary(d_.r.to_numpy(), d_.day.to_numpy())) if len(d_) else 'n=0'}")
 
             # Baselines: same entry bars, same risk and reward distances, own direction.
-            geom = {r.ts: (r.risk, r.reward) for r in df.itertuples()}
+            # Keyed by symbol, then ts: each baseline mirrors its own symbol's Kronos trades only.
+            geom = {s: {r.ts: (r.risk, r.reward) for r in df[df.symbol == s].itertuples()} for s in syms}
             closes = {s: bars[s][0].mid[:, 3] for s in syms}
             lines += ["", "## Baselines (same entry bars, risk and reward distances, costs)", ""]
+            d_rev = pd.DataFrame()
             for name, fn_factory in {
                 "momentum": lambda s: (lambda t, fs: int(np.sign(closes[s][t] - closes[s][t - 24]))),
                 "mean reversion": lambda s: (lambda t, fs: -int(np.sign(closes[s][t] - closes[s][t - 24]))),
                 "revert to 400-bar mean": lambda s: (lambda t, fs: int(np.sign(closes[s][t - 399:t + 1].mean() - closes[s][t]))),
             }.items():
-                rws = [x for s in syms for x in run_symbol(s, bars[s][0], fcs[s], p, m, direction_fn=fn_factory(s), geometry=geom)]
+                rws = [x for s in syms for x in run_symbol(s, bars[s][0], fcs[s], p, m, direction_fn=fn_factory(s), geometry=geom[s])]
                 d_ = trades_df(rws)
                 lines.append(f"- {name}: {fmt(summary(d_.r.to_numpy(), d_.day.to_numpy())) if len(d_) else 'n=0'}")
+                if name == "revert to 400-bar mean":
+                    d_rev = d_
+            # D3: Kronos must beat revert-to-400-bar-mean on the same (symbol, entry bar), paired.
+            pair = (df.merge(d_rev[["symbol", "ts", "r"]], on=["symbol", "ts"], suffixes=("", "_rev"))
+                    if len(d_rev) else df.iloc[:0].assign(r_rev=[]))
+            vs_rev = summary((pair.r - pair.r_rev).to_numpy(), pair.day.to_numpy()) if len(pair) else {"n": 0}
+            beats_rev = vs_rev["n"] > 0 and vs_rev["mean_r"] > 0 and vs_rev["ci_lo"] > 0
+            lines.append(f"- Kronos − revert to 400-bar mean, paired on {vs_rev['n']} of {len(df)} trades: {fmt(vs_rev)}")
+            if a.stage == "oos":
+                go = base["n"] >= 100 and base["mean_r"] > 0 and base["ci_lo"] > 0
+                verdict = ("INCONCLUSIVE (n < 100)" if base["n"] < 100 else
+                           "NO-GO" if not go else
+                           "GO" if beats_rev else "NO-GO (not better than revert-to-mean)")
+                lines[verdict_at:verdict_at] = [f"**Verdict: {verdict}**", ""]
             rng = np.random.default_rng(7)
             means = []
             for _ in range(1000):
                 rws = [x for s in syms for x in run_symbol(s, bars[s][0], fcs[s], p, m,
-                                                             direction_fn=lambda t, fs: int(rng.choice([-1, 1])), geometry=geom)]
+                                                             direction_fn=lambda t, fs: int(rng.choice([-1, 1])), geometry=geom[s])]
                 means.append(np.mean([x["r"] for x in rws]) if rws else np.nan)
             means = np.array(means)
             lines.append(f"- random direction (1,000 repeats): mean of means {np.nanmean(means):+.3f} R, "
@@ -281,7 +312,7 @@ def main():
                 # Feature confirmation
                 lines += ["", "## Feature tests (out-of-sample, confirm only in-sample winners)", "",
                           "| feature | mean R above − below | p | Holm p |", "|---|---|---|---|"]
-                lines += [f"| {f} | {d:+.3f} | {pv:.3f} | {ad:.3f} |" for f, d, pv, ad in feature_tests(df)]
+                lines += [feature_row(*t) for t in feature_tests(df)]
 
                 # Monte Carlo and the monthly target check
                 mc = monte_carlo(df.r.to_numpy(), df.entry_ts.to_numpy())

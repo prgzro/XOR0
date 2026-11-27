@@ -50,6 +50,15 @@ def check_seal(commit: str | None, to: pd.Timestamp):
                  "or is not recorded under 'Pre-registration commit'.")
 
 
+def check_existing(path: Path, lo: pd.Timestamp, hi: pd.Timestamp):
+    """Resume only a file from the same window; a file from another window (e.g. a contamination
+    run's SYM_2025.parquet when the sealed run asks for 2025-07 onward) is an error, not a skip."""
+    ts = pd.to_datetime(pd.read_parquet(path, columns=["ts"])["ts"], utc=True)
+    if len(ts) and (ts.min() < lo or ts.max() >= hi):
+        sys.exit(f"Refusing: {path} holds {ts.min()} .. {ts.max()}, outside the requested "
+                 f"[{lo}, {hi}). Use a separate --out for each window.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="small")
@@ -78,10 +87,11 @@ def main():
         atr = wilder_atr(bars.mid)
         for year in range(start.year, end.year + (1 if end > pd.Timestamp(f"{end.year}-01-01", tz="UTC") else 0)):
             path = out_dir / f"{sym}_{year}.parquet"
-            if path.exists():
-                continue
             lo = max(start, pd.Timestamp(f"{year}-01-01", tz="UTC"))
             hi = min(end, pd.Timestamp(f"{year + 1}-01-01", tz="UTC"))
+            if path.exists():
+                check_existing(path, lo, hi)
+                continue
             ts = bars.ts
             idx = np.where((ts >= lo) & (ts < hi) & (np.arange(len(ts)) >= cfg.lookback - 1) & np.isfinite(atr))[0]
             idx = idx[idx + 1 < len(ts)]  # a Forecast needs a next bar to trade on
